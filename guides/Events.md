@@ -245,7 +245,38 @@ defmodule AccountProjector do
 end
 ```
 
-All events in the batch are acknowledged when `:ok` is returned. Batching and concurrency cannot be used together.
+All events in the batch are acknowledged when `:ok` is returned.
+
+Batching can be combined with concurrency. Each concurrent handler instance will batch events for its partition independently. Use `partition_by/2` to control event routing.
+
+**Example: Market notifications with per-market batching**
+
+```elixir
+defmodule MarketNotifier do
+  use Commanded.Event.Handler,
+    application: TradingApp,
+    name: "MarketNotifier",
+    concurrency: 10,      # 10 concurrent instances
+    batch_size: 50,       # Each instance batches up to 50 events
+    batch_timeout: 100    # Each instance flushes after 100ms
+
+  # Route events by market_id
+  def partition_by(%TradeExecuted{market_id: market_id}, _metadata) do
+    market_id
+  end
+
+  def handle_batch(events) do
+    # All events in this batch are for the same market
+    # Calculate stats once, broadcast once
+    market_id = extract_market_id(events)
+    stats = calculate_stats(events)
+    broadcast_update(market_id, stats)
+    :ok
+  end
+end
+```
+
+This creates 10 handler processes, each independently batching events for different markets.
 
 ### Batch failure and idempotency
 

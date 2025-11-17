@@ -195,12 +195,40 @@ defmodule Commanded.Event.HandlerConfigTest do
       subscribe_to: "stream1"
   end
 
-  test "should validate only one of batch_size or concurrency can be set" do
+  test "should allow concurrency and batch_size with eventual consistency" do
+    # Now supported! Just verify it compiles and starts
+    defmodule ValidConcurrentBatchHandler do
+      use Commanded.Event.Handler,
+        application: Commanded.ExampleDomain.BankApp,
+        name: __MODULE__,
+        concurrency: 5,
+        batch_size: 10,
+        consistency: :eventual
+
+      def partition_by(_event, _metadata), do: :default
+      def handle_batch(_events), do: :ok
+    end
+
+    # Should not raise
+    assert true
+  end
+
+  test "should reject strong consistency with concurrency and batch_size" do
     expected_error =
-      "both `:concurrency` and `:batch_size` are specified, this is not yet supported. Please choose one or the other."
+      "`:strong` consistency cannot be used with `:concurrency` and `:batch_size` together. Use `:eventual` consistency instead."
+
+    defmodule TestModule do
+      def init(config), do: {:ok, config}
+    end
 
     assert_raise ArgumentError, expected_error, fn ->
-      InvalidBatchConcurrencyHandler.start_link()
+      Commanded.Event.Handler.parse_config!(TestModule, [
+        application: Commanded.ExampleDomain.BankApp,
+        name: "TestHandler",
+        concurrency: 5,
+        batch_size: 10,
+        consistency: :strong
+      ])
     end
   end
 

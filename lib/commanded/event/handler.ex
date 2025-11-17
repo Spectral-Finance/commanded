@@ -81,6 +81,7 @@ defmodule Commanded.Event.Handler do
       event_count: integer(),
       recorded_event: RecordedEvent.t() | nil,
       flush_reason: :size | :timeout | :immediate,
+      optional(:partition) => any(),
       optional(:error) => any()}
     """
   })
@@ -357,8 +358,9 @@ defmodule Commanded.Event.Handler do
   On returning `:ok` from the batch handler, all events will be acknowledged. Currently,
   no mechanism exists for partial acknowledgement of a batch.
 
-  Batching and concurrency currently are not supported together; setting conflicting
-  options will trigger a compilation error.
+  Batching and concurrency can be used together. Each concurrent handler instance will
+  batch events for its partition independently. Only `:eventual` consistency is supported
+  when using concurrency with batching.
 
   ### Batch timeout
 
@@ -405,13 +407,20 @@ defmodule Commanded.Event.Handler do
           event_count = metadata.event_count
           flush_reason = metadata.flush_reason
           handler_name = metadata.handler_name
+          partition = Map.get(metadata, :partition)
 
-          # Track metrics by flush reason
+          # Track metrics by flush reason and partition
           :telemetry.execute(
             [:my_app, :batch, :processed],
             %{count: event_count, duration: measurements.duration},
-            %{handler: handler_name, reason: flush_reason}
+            %{handler: handler_name, reason: flush_reason, partition: partition}
           )
+
+          # With concurrent handlers, partition identifies which instance processed the batch
+          if Map.has_key?(metadata, :partition) do
+            require Logger
+            Logger.debug("Partition: " <> inspect(metadata.partition))
+          end
 
           # Alert on small timeout flushes (might need tuning)
           if flush_reason == :timeout and event_count < 10 do
@@ -426,6 +435,9 @@ defmodule Commanded.Event.Handler do
   - `:size` - Batch filled to `batch_size`
   - `:timeout` - `batch_timeout` elapsed
   - `:immediate` - No timeout configured (backwards compatible mode)
+
+  With concurrent handlers using `partition_by/2`, the metadata also includes `:partition`
+  to identify which partition processed the batch (e.g., which market, tenant, or stream).
 
   ### Example
 
@@ -833,9 +845,13 @@ defmodule Commanded.Event.Handler do
             inspect(module) <> " specifies invalid options: " <> inspect(Keyword.keys(invalid))
     end
 
-    if Keyword.has_key?(config, :concurrency) and Keyword.has_key?(config, :batch_size) do
+    # Concurrency + batching: Each concurrent instance batches independently
+    # Strong consistency requires concurrency: 1
+    if Keyword.has_key?(config, :concurrency) and
+       Keyword.has_key?(config, :batch_size) and
+       Keyword.get(config, :consistency) == :strong do
       raise ArgumentError,
-            "both `:concurrency` and `:batch_size` are specified, this is not yet supported. Please choose one or the other."
+            "`:strong` consistency cannot be used with `:concurrency` and `:batch_size` together. Use `:eventual` consistency instead."
     end
 
     {application, config} = Keyword.pop(config, :application)
@@ -1709,10 +1725,21 @@ defmodule Commanded.Event.Handler do
       application: application,
       handler_name: handler_name,
       handler_module: handler_module,
-      handler_state: handler_state
+      handler_state: handler_state,
+      subscription: subscription
     } = state
 
-    %{
+    # Extract partition if using concurrency with partition_by
+    partition =
+      if subscription && subscription.partition_by && subscription.concurrency > 1 do
+        try do
+          subscription.partition_by.(first_event)
+        rescue
+          _ -> nil
+        end
+      end
+
+    base_metadata = %{
       application: application,
       handler_name: handler_name,
       handler_module: handler_module,
@@ -1724,6 +1751,13 @@ defmodule Commanded.Event.Handler do
       event_count: length(recorded_events),
       flush_reason: Map.get(context, :flush_reason, :immediate)
     }
+
+    # Add partition if available
+    if partition do
+      Map.put(base_metadata, :partition, partition)
+    else
+      base_metadata
+    end
   end
 
   defp telemetry_metadata(recorded_event, context, %Handler{} = state) do

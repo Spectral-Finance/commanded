@@ -69,5 +69,8 @@ defmodule Commanded.Event.EventHandlerMacroTest.ConflictingOptions do
     application: Commanded.ExampleDomain.BankApp,
     name: __MODULE__,
     concurrency: 2,
-    batch_size: 10
+    batch_size: 10,
+    consistency: :strong  # This should raise an error
+
+  def handle_batch(_events), do: :ok
 end

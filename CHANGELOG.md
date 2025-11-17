@@ -11,6 +11,16 @@
   - Follows Broadway/GenStage patterns for familiar API
   - See event handler guide for usage examples and timeout recommendations
 
+* Enable concurrent batching with independent timers per partition
+  - Each concurrent handler instance batches events for its partition independently
+  - Each partition has its own timer and buffer (fully isolated)
+  - Perfect for multi-tenant or multi-market systems
+  - Only `:eventual` consistency supported with `concurrency` + `batch_size`
+
+### Bug fixes
+
+* Fix race condition in batch processing where timer could fire during batch handling
+  - Buffer and timer now cleared before processing to prevent stale state
 ## v1.4.9
 
 ### Enhancements

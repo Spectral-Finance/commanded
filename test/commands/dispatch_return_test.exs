@@ -137,6 +137,49 @@ defmodule Commanded.Commands.DispatchReturnTest do
     end
   end
 
+  describe "dispatch return events only" do
+    test "should return resultant events without aggregate state" do
+      assert {:ok,
+              [
+                %BankAccountOpened{
+                  account_number: "ACC123",
+                  initial_balance: 1_000
+                }
+              ]} =
+               BankApp.dispatch(
+                 %OpenAccount{account_number: "ACC123", initial_balance: 1_000},
+                 returning: :events_only
+               )
+    end
+
+    test "should return empty list when no events produced" do
+      assert {:ok, _events} =
+               BankApp.dispatch(
+                 %OpenAccount{account_number: "ACC123", initial_balance: 1},
+                 returning: :events_only
+               )
+
+      assert {:ok, _events} =
+               BankApp.dispatch(
+                 %CloseAccount{account_number: "ACC123"},
+                 returning: :events_only
+               )
+
+      assert {:ok, []} =
+               BankApp.dispatch(
+                 %CloseAccount{account_number: "ACC123"},
+                 returning: :events_only
+               )
+    end
+
+    test "should return an error on failure" do
+      command = %OpenAccount{account_number: "ACC123", initial_balance: -1}
+
+      assert {:error, :invalid_initial_balance} ==
+               BankApp.dispatch(command, returning: :events_only)
+    end
+  end
+
   describe "dispatch return execution result" do
     test "should return created events" do
       metadata = %{"ip_address" => "127.0.0.1"}

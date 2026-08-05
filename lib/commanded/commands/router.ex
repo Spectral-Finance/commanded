@@ -148,6 +148,11 @@ defmodule Commanded.Commands.Router do
     - `:events` - to return the resultant domain events. An empty list will be
       returned if no events were produced.
 
+    - `:events_only` - to return the resultant domain events without copying
+      aggregate state from the aggregate process to the command dispatcher.
+      This reduces inter-process message size for large aggregates, but
+      `after_dispatch/1` middleware cannot access `:aggregate_state`.
+
     - `:execution_result` - to return a `Commanded.Commands.ExecutionResult`
       struct containing the aggregate's identity, state, version, and any events
       produced from the command along with their associated metadata.
@@ -544,6 +549,7 @@ defmodule Commanded.Commands.Router do
                 :aggregate_state,
                 :aggregate_version,
                 :events,
+                :events_only,
                 :execution_result,
                 false
               ] ->
@@ -638,6 +644,7 @@ defmodule Commanded.Commands.Router do
         :aggregate_state,
         :aggregate_version,
         :events,
+        :events_only,
         :execution_result,
         false
       ] ->

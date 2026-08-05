@@ -1,5 +1,16 @@
 # Changelog
 
+## vNext (Unreleased)
+
+### Enhancements
+
+* Add `batch_timeout` option for time-based batch flushing
+  - Batches now flush on size OR time, whichever comes first
+  - Solves unbounded latency problem for low-volume event streams
+  - Defaults to `:infinity` for full backwards compatibility
+  - Follows Broadway/GenStage patterns for familiar API
+  - See event handler guide for usage examples and timeout recommendations
+
 ## v1.4.9
 
 ### Enhancements
